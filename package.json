@@ -1,0 +1,16 @@
+{
+  "name": "wasm",
+  "version": "1.0.0",
+  "main": "index.js",
+  "author": "ilmari-h <52321471+ilmari-h@users.noreply.github.com>",
+  "scripts": {
+    "build": "wasm-pack build --target web --manifest-path Cargo.wasm.toml && cp -r ./pkg/* ./dist/ && cp -r ./js/* ./dist/ && rm -r ./pkg ./dist/package.json",
+    "dev": "python3 -m http.server --directory dist",
+    "test": "cargo test tests -- --nocapture"
+  },
+  "dependencies": {
+    "wasm-server": "^0.0.4",
+    "webpack": "^5.70.0",
+    "webpack-cli": "^4.9.2"
+  }
+}
