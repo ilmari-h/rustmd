@@ -17,7 +17,7 @@ pub enum Token {
 }
 
 pub trait HigherLevel {
-    fn children(&self) -> Option<&Vec<Token>>;
+    fn children(&self) -> &Vec<Token>;
 }
 
 pub trait Leveled {
@@ -70,8 +70,8 @@ impl Leveled for Header {
 macro_rules! impl_HigherLevel {
     (for $($t:ty),+) => {
         $(impl HigherLevel for $t {
-            fn children(&self) -> Option<&Vec<Token>> {
-                Some(&self.children)
+            fn children(&self) -> &Vec<Token> {
+                &self.children
             }
         })*
     }
@@ -83,18 +83,11 @@ impl_HigherLevel!(for Header);
 // DEBUG IMPLEMENTATIONS
 // ----------------------------------------------------------------------------
 
-fn print_children(tk:& dyn HigherLevel) -> i32 {
-    let oc = tk.children();
-    match oc {
-        Some(c) => return c.len() as i32,
-        None => return 0
-    }
-}
-
 impl fmt::Debug for Header {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("Header")
-         .field("Header:", &print_children(self))
+         .field("children", &self.children().len())
+         .field("level", &self.level())
          .finish()
     }
 }
@@ -102,7 +95,7 @@ impl fmt::Debug for Header {
 impl fmt::Debug for PlainText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PlainText")
-            .field("PlainText:", &self.text())
+            .field("content", &self.text())
             .finish()
     }
 }

@@ -8,7 +8,7 @@ edition = "2021"
 [lib]
 name = "rustmd"
 path = "src/lib.rs"
-# crate-type = ["cdylib", "rlib"] UNCOMMENT WHEN BUILDING FOR WASM
+crate-type = ["cdylib", "rlib"] # Comment this
 
 [[bin]]
 name = "mybin"
