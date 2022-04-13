@@ -40,7 +40,9 @@ impl Compile<TargetHTML> for Token {
     fn compile(&self) -> TargetHTML {
         match self {
             Token::Header(h) => return h.compile(),
-            Token::PlainText(t) => return t.compile()
+            Token::PlainText(t) => return t.compile(),
+            Token::Italic(t) => return t.compile(),
+            Token::Paragraph(t) => return t.compile(),
         }
     }
 }
@@ -48,7 +50,17 @@ impl Compile<TargetHTML> for Token {
 impl Compile<TargetHTML> for PlainText {
 
     fn compile(&self) -> TargetHTML {
-        self.text().to_string()
+        if self.text().is_empty() { "<br>".to_string() }
+        else { format!("<span>{}</span>",self.text().to_string()) }
+    }
+}
+
+impl Compile<TargetHTML> for Paragraph {
+    fn compile(&self) -> TargetHTML {
+        let children_html = self.children()
+            .iter()
+            .fold("".to_string(), |sum, s| format!("{}{}",sum,s.compile()));
+        format!("<div>{}</div>",children_html)
     }
 }
 
@@ -56,7 +68,17 @@ impl Compile<TargetHTML> for Header {
 
     fn compile(&self) -> TargetHTML {
         // TODO multiple
-        let children_html = if self.children.len() > 0 {self.children()[0].compile()} else {"".to_string()};
+        let children_html = self.children()
+            .iter()
+            .fold("".to_string(), |sum, s| format!("{}{}",sum,s.compile()));
         return format!("<h{l}>{c}</h{l}>",l=self.level(),c=children_html);
+    }
+}
+
+impl Compile<TargetHTML> for Italic {
+
+    fn compile(&self) -> TargetHTML {
+        // TODO multiple
+        return format!("<i>{t}</i>", t=self.text());
     }
 }
