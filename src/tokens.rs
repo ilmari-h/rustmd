@@ -15,7 +15,10 @@ pub enum Token {
     Header(Header),
     Paragraph(Paragraph),
     PlainText(PlainText),
-    Italic(Italic)
+    Italic(Italic),
+    InlineCode(InlineCode),
+    Link(Link),
+    Bold(Bold)
 }
 
 pub trait HigherLevel {
@@ -55,27 +58,23 @@ pub struct Italic {
     pub text: String
 }
 
+pub struct InlineCode {
+    pub text: String
+}
+
+pub struct Bold {
+    pub text: String
+}
+
 pub struct Link {
-    children: Vec<Token>,
-    url: String
+    pub children: Vec<Token>,
+    pub url: String
 }
 
 // ----------------------------------------------------------------------------
 // TRAIT IMPLEMENTATIONS FOR TYPES
 // ----------------------------------------------------------------------------
 
-// TextComponents are generally inline and do not have children
-impl TextComponent for PlainText {
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-}
-
-impl TextComponent for Italic {
-    fn text(&self) -> String {
-        self.text.clone()
-    }
-}
 
 impl Leveled for Header {
     fn level(&self) -> u32 {
@@ -93,7 +92,20 @@ macro_rules! impl_HigherLevel {
     }
 }
 
-impl_HigherLevel!(for Header, Paragraph);
+macro_rules! impl_TextComponent {
+    (for $($t:ty),+) => {
+        $(impl TextComponent for $t {
+            fn text(&self) -> String {
+                self.text.clone()
+            }
+        })*
+    }
+}
+
+impl_HigherLevel!(for Header, Paragraph, Link);
+
+// TextComponents are generally inline and do not have children
+impl_TextComponent!(for PlainText, Italic, Bold, InlineCode);
 
 // ----------------------------------------------------------------------------
 // DEBUG IMPLEMENTATIONS
@@ -116,9 +128,25 @@ impl fmt::Debug for Paragraph {
     }
 }
 
+impl fmt::Debug for Link {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Link")
+         .field("url", &self.url)
+         .finish()
+    }
+}
+
 impl fmt::Debug for PlainText {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("PlainText")
+            .field("content", &self.text())
+            .finish()
+    }
+}
+
+impl fmt::Debug for Bold {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Bold")
             .field("content", &self.text())
             .finish()
     }
@@ -132,13 +160,24 @@ impl fmt::Debug for Italic {
     }
 }
 
+impl fmt::Debug for InlineCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Italic")
+            .field("content", &self.text())
+            .finish()
+    }
+}
+
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Token::Header(h) => return h.fmt(f),
             Token::PlainText(t) => return t.fmt(f),
             Token::Italic(t) => return t.fmt(f),
-            Token::Paragraph(t) => return t.fmt(f)
+            Token::Link(t) => return t.fmt(f),
+            Token::Bold(t) => return t.fmt(f),
+            Token::Paragraph(t) => return t.fmt(f),
+            Token::InlineCode(t) => return t.fmt(f)
         }
     }
 }

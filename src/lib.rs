@@ -5,6 +5,7 @@ use wasm_bindgen::prelude::*;
 
 //mod js_bridge;
 mod tokens;
+mod tree_reader;
 mod compilation_targets;
 mod parser;
 

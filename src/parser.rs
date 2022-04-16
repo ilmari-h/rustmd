@@ -2,8 +2,7 @@ use nom::{
     IResult,
     error::Error,
     Err,
-    sequence::delimited,
-    sequence::pair,
+    sequence::{delimited,preceded,tuple, terminated},
     // see the "streaming/complete" paragraph lower for an explanation of these submodules
     character::complete::char,
     character::complete::newline,
@@ -13,9 +12,7 @@ use nom::{
     bytes::complete::tag,
     bytes::complete::take_till,
     bytes::complete::take_till1,
-    sequence::terminated,
     combinator::{not, rest,eof},
-    sequence::preceded, // Good for matching markdown tags
     multi::{many1_count, many1, many_till, many0, fold_many0}, // Get all lines and apply syntax parsing
     error::ErrorKind, Parser
 };
@@ -72,8 +69,8 @@ fn try_all_parsers(allowed_parsers: Vec<fn(&str) -> IResult<&str, Token>>, sourc
 }
 
 /**
- Attempt to take a Token. If no Token is found, get leading plain text until Token is found
- Or consume all input and return just PlainText.
+ Attempt to take a Token. If no Token is found, get leading plain text until
+ Token is found or consume all input and return just PlainText.
 */
 fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&str, Token>>, src: &str) -> IResult<&str,Vec<Token>>{
 
@@ -81,8 +78,8 @@ fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&st
             return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}))
     }
 
-    let lines = many0( |s| try_all_parsers(token_parsers.clone(), s))(src);
-    match lines {
+    let leading_token = many0( |s| try_all_parsers(token_parsers.clone(), s))(src);
+    match leading_token {
         Ok((rem,consumed)) => {
             // If no token found at head of input, consume into PlainText until found token or EOF.
             if consumed.is_empty() {
@@ -98,6 +95,7 @@ fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&st
                     Err(_) => Ok(("",vec![Token::PlainText(PlainText{text: src.to_string()})]))
                 }
             }
+            // Found Token in the beginning, no plain text.
             return Ok((rem,consumed));
         },
         Err(_) => {
@@ -114,6 +112,8 @@ fn parse_children(allowed_children: Vec<fn(&str) -> IResult<&str, Token>>, src: 
         Vec::new,
         |mut res: Vec<_>, mut tokens| {res.append(&mut tokens); res}
     )(src);
+
+    println!("{:?}",lines);
 
     match lines {
         Ok((_,tokens)) => {
@@ -139,9 +139,6 @@ fn parse_line_consuming_token(source: &str) -> IResult<&str, Token> {
     return Err(Err::Error(err));
 }
 
-// Should be also called if line doesn't have higher level tokens. Just populate line with a
-// vector.
-
 impl Parsable for Header {
     fn parse(source: &str) -> IResult<&str,Token> {
 
@@ -150,11 +147,11 @@ impl Parsable for Header {
             Ok((rem, count)) => {
 
                 // Here call some generic method to consume all children until empty remainder.
-                let children = parse_children(vec![Italic::parse], rem);
+                let children = parse_children(vec![Bold::parse, Italic::parse,Link::parse, InlineCode::parse], rem);
                 return Ok((
                     "",
                     Token::Header(Header{
-                        children: children,
+                        children,
                         level: count as u32
                     })
                 ))
@@ -164,13 +161,19 @@ impl Parsable for Header {
     }
 }
 
+impl Parsable for Paragraph {
+    fn parse(source: &str) -> IResult<&str,Token> {
+        let children: Vec<Token> = parse_children(vec![Bold::parse, Italic::parse, Link::parse, InlineCode::parse],source);
+        return Ok((
+            "",
+            Token::Paragraph(Paragraph{ children })
+        ));
+    }
+}
+
 impl Parsable for Italic {
     fn parse(source: &str) -> IResult<&str,Token> {
-        // TODO: again, need to run some generic iterative "recursive" function on the remainder
-        let res: IResult<&str, &str> = terminated(
-            preceded(tag("*"), take_till(|c| c == INLINE_SYMBOL)),
-            tag("*")
-        )(source);
+        let res: IResult<&str, &str> = delimited( char('*'), is_not("*"), char('*'))(source);
         match res {
             Ok((rem, consumed)) => Ok((rem, Token::Italic(Italic{text: consumed.to_string()}))),
             Err(e) => Err(e)
@@ -178,18 +181,53 @@ impl Parsable for Italic {
     }
 }
 
-impl Parsable for Paragraph {
+impl Parsable for Link {
     fn parse(source: &str) -> IResult<&str,Token> {
-        let children: Vec<Token> = parse_children(vec![Italic::parse],source);
-        return Ok((
-            "",
-            Token::Paragraph(Paragraph{
-                children: children
-            })
-        ));
+        let caption = terminated(
+            preceded(tag("["), take_till(|c| c == ']')),
+            tag("]"));
+        let url = terminated(
+            preceded(tag("("), take_till(|c| c == ')')),
+            tag(")"));
+
+        let res:IResult<&str, (&str,&str)> = tuple((caption,url))(source);
+        match res {
+            Ok((rem, (caption,url))) => {
+                let children: Vec<Token> = parse_children(vec![Bold::parse, Italic::parse],caption);
+                return Ok((
+                    rem,
+                    Token::Link(Link{children,url: url.to_string()})
+                    ))
+                }
+            ,
+            Err(e) => Err(e)
+        }
     }
 }
 
+impl Parsable for InlineCode {
+    fn parse(source: &str) -> IResult<&str,Token> {
+        let res: IResult<&str, &str> = terminated(
+            preceded(tag("`"), take_till(|c| c == '`')),
+            tag("`"))(source);
+        match res {
+            Ok((rem, consumed)) => Ok((rem, Token::InlineCode(InlineCode{text: consumed.to_string()}))),
+            Err(e) => Err(e)
+        }
+    }
+}
+
+impl Parsable for Bold {
+    fn parse(source: &str) -> IResult<&str,Token> {
+        let res: IResult<&str, &str> = terminated(
+            preceded(tag("**"), take_till(|c| c == INLINE_SYMBOL)),
+            tag("**"))(source);
+        match res {
+            Ok((rem, consumed)) => Ok((rem, Token::Bold(Bold{text: consumed.to_string()}))),
+            Err(e) => Err(e)
+        }
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -208,16 +246,21 @@ mod tests {
     fn t_parse_md_str() {
         assert_eq!(true,parse_md_str("\
             ### First header\n\
-            Here's some plain text *and italics* and plain text *and italics again*\
+            **Bold text** Plain text in between *Italics after*\n\
+            Here's some plain text *and italics* and plain text *and italics again*\n
+            [This is a link](www.gnu.org)\n
+            [**This is a bold link**](www.gnu.org)\n
             \nFailed italics text*\n**Unterminated bold\n# Last header"
         ).len() > 0);
         //assert_eq!(true,parse_md_str("## Hi").len() > 0);
     }
-    //
-    //    #[test]
-    //    fn t_parse_italic() {
-    //        assert_eq!(true,Italic::parse("*Text in italics*").is_ok());
-    //        assert_eq!(true,Italic::parse("* Not complete").is_err());
-    //    }
-    //
+
+    #[test]
+    fn t_parse_italic() {
+        assert_eq!(true,Italic::parse("*Text in italics*").is_ok());
+        assert_eq!(true,Italic::parse("* Not complete").is_err());
+        assert_eq!(true,Italic::parse("*Not complete").is_err());
+        assert_eq!(true,Italic::parse("**").is_err());
+    }
+
 }

@@ -41,8 +41,11 @@ impl Compile<TargetHTML> for Token {
         match self {
             Token::Header(h) => return h.compile(),
             Token::PlainText(t) => return t.compile(),
+            Token::InlineCode(t) => return t.compile(),
             Token::Italic(t) => return t.compile(),
+            Token::Bold(t) => return t.compile(),
             Token::Paragraph(t) => return t.compile(),
+            Token::Link(t) => return t.compile(),
         }
     }
 }
@@ -64,10 +67,19 @@ impl Compile<TargetHTML> for Paragraph {
     }
 }
 
+impl Compile<TargetHTML> for Link {
+    fn compile(&self) -> TargetHTML {
+        let children_html = self.children()
+            .iter()
+            .fold("".to_string(), |sum, s| format!("{}{}",sum,s.compile()));
+        let href_tag = if self.url.is_empty() {"".to_string()} else {format!("href='{}'",self.url)};
+        format!("<a {h}>{c}</a>",h=href_tag,c=children_html)
+    }
+}
+
 impl Compile<TargetHTML> for Header {
 
     fn compile(&self) -> TargetHTML {
-        // TODO multiple
         let children_html = self.children()
             .iter()
             .fold("".to_string(), |sum, s| format!("{}{}",sum,s.compile()));
@@ -78,7 +90,20 @@ impl Compile<TargetHTML> for Header {
 impl Compile<TargetHTML> for Italic {
 
     fn compile(&self) -> TargetHTML {
-        // TODO multiple
         return format!("<i>{t}</i>", t=self.text());
+    }
+}
+
+impl Compile<TargetHTML> for Bold {
+
+    fn compile(&self) -> TargetHTML {
+        return format!("<strong>{}</strong>", self.text());
+    }
+}
+
+impl Compile<TargetHTML> for InlineCode {
+
+    fn compile(&self) -> TargetHTML {
+        return format!("<code>{}</code>", self.text());
     }
 }
