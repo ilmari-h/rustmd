@@ -61,10 +61,7 @@ where
     let mut last_leaves: HashMap<u32,u32> = HashMap::new();
     while !stack.is_empty() {
         let current: Option<VisitRecord<T>> = stack.pop_front();
-        if let None = current {
-            break;
-        }
-        else if let Some(node) = current {
+        if let Some(node) = current {
             println!("Level: {:?} - Id: {:?} - Value: {:?}", node.level, node.id, node.value);
 
             // All node's leaves visited at this point.
