@@ -1,119 +1,176 @@
-use core::fmt;
-use std::collections::{VecDeque, HashSet, HashMap};
 
+use std::{collections::{VecDeque, HashMap}, slice::Iter, borrow::Borrow, fmt::Debug};
 
-struct Node {
-    pub val: String,
-    pub children: Vec<Node>
-}
+// trait Node<'a,T: 'a> {
+//     type NodeIterator : Iterator<Item=&'a T>;
+//     fn leaves(&'a self) -> Self::NodeIterator;
+// }
+//
+// struct TestNode {
+//     pub val: String,
+//     pub children: Vec<TestNode>
+// }
+//
+// impl<'a> Node<'a,TestNode> for TestNode {
+//     type NodeIterator = Iter<'a,TestNode>;
+//     fn leaves(&'a self) -> Self::NodeIterator {
+//         return self.children.iter();
+//     }
+// }
 
-pub trait Root<T> {
-    fn leaves(&self) -> &Vec<T>;
-}
-
-impl Root<Node> for Node {
-    fn leaves(&self) -> &Vec<Node> {
-        return &self.children;
+//struct TreeIter<'a,T> where T: Node<'a>{
+//    pub queue: VecDeque<&'a T>
+//}
+//
+//
+impl <'a,T>TreeIter<'a,T> where T: Node<'a> {
+    fn new( queue: VecDeque<&'a T>, dfs: bool ) -> Self {
+        return Self{queue, dfs}
     }
 }
 
-impl <T>fmt::Debug for dyn Root<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Root Node: Generic")
-         .field("Root item",&"")
-         .finish()
-    }
+struct TreeIter<'a,T> where T: Node<'a> {
+    pub dfs: bool,
+    pub queue: VecDeque<&'a T>
 }
 
-impl fmt::Debug for Node {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Node")
-         .field("Item",&self.val)
-         .finish()
-    }
-}
-
-struct VisitRecord<'a,T> {
-    pub level: u32,
-    pub id: u32,
-    pub value: &'a T
-}
-
-#[derive(PartialEq)]
-enum SearchMode {
-    BreadthFirst,
-    DepthFirst
-}
-
-fn read_tree<T>(root: &T, mode: SearchMode)
-where
-    T: Root<T>,
-    T: fmt::Debug {
-
-    let mut id = 0; // Give each visited node its own id
-    let mut stack: VecDeque<VisitRecord<T>> = VecDeque::from([VisitRecord{
-        level:1,
-        id:0,
-        value:root
-    }]);
-
-    // Last children of parent nodes, maps last child ID to parent ID
-    let mut last_leaves: HashMap<u32,u32> = HashMap::new();
-    while !stack.is_empty() {
-        let current: Option<VisitRecord<T>> = stack.pop_front();
-        if let Some(node) = current {
-            println!("Level: {:?} - Id: {:?} - Value: {:?}", node.level, node.id, node.value);
-
-            // All node's leaves visited at this point.
-            if let Some(parent) = last_leaves.get(&node.id) {
-                //println!("Parent and last leaf: {:?} - {:?}", parent, node.value);
-            }
-            let children: &Vec<T> = &node.value.leaves();
-            last_leaves.insert(id + 1, node.id);
-            let add_to_queue = |c| {
-                id += 1;
-                let leaf = VisitRecord{
-                    level:node.level+1,
-                    id,
-                    value:c
-                };
-                if SearchMode::DepthFirst == mode {
-                    stack.push_front(leaf);
+impl <'a,T>Iterator for TreeIter<'a,T> where T: Node<'a> {
+    type Item = &'a T;
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.queue.pop_front() {
+            Some(node) => {
+                if self.dfs {
+                    for leaf_node in node.leaves().iter().rev() {
+                        self.queue.push_front(leaf_node)
+                    }
                 } else {
-                    stack.push_back(leaf);
+                    for leaf_node in node.leaves() {
+                        self.queue.push_back(leaf_node)
+                    }
                 }
-            };
-
-            if SearchMode::DepthFirst == mode {
-                children.iter().rev().for_each(add_to_queue);
-            } else {
-                children.iter().for_each(add_to_queue);
+                return Some(node);
             }
+            None => return None
         }
     }
 }
 
-#[cfg(test)]
-mod tests {
+#[derive(Debug)]
+struct TestNode {
+    pub val: &'static str,
+    pub children: Vec<TestNode>,
+}
 
+trait Tree<'a,T>
+where T: Node<'a> {
+    fn root(&self) -> &T;
+    fn bfs_iter(&'a self) -> TreeIter<T> {
+        return TreeIter::new( VecDeque::from([self.root()]), false );
+    }
+    fn dfs_iter(&'a self) -> TreeIter<T> {
+        return TreeIter::new( VecDeque::from([self.root()]), true );
+    }
+}
+
+struct TestTree{
+    pub root: TestNode
+}
+
+// NOTE: here get to use an anonymous lifetime because there's no reference to it in implementation?
+impl Tree<'_,TestNode> for TestTree{
+    fn root(&self) -> &TestNode {
+        return &self.root;
+    }
+}
+
+impl TestTree {
+    fn new(root: TestNode) -> Self {
+        Self{root}
+    }
+    fn get_mut_node(&mut self, value: &str) -> Option< &mut TestNode> {
+        let c = self.root.leaves_mut().iter_mut().find(|c| c.val == value);
+        return c;
+    }
+}
+
+trait Node<'a>
+where Self: Sized{
+    fn leaves(&'a self) -> &'a [Self];
+    fn leaves_mut(&'a mut self) -> &'a mut [Self];
+}
+
+impl <'a>Node<'a> for TestNode {
+    fn leaves(&'a self) -> &'a [TestNode] {
+        return &self.children[..]
+    }
+    fn leaves_mut(&'a mut self) -> &'a mut [TestNode] {
+        return &mut self.children[..]
+    }
+}
+
+fn read_tree<'a,T>(tree:&'a T)
+where T: Node<'a>, T: Debug{
+    let mut queue: VecDeque<&T> = VecDeque::from([tree]);
+    while let Some(node) = queue.pop_front() {
+        println!("{:?}", node);
+        node.leaves().iter().for_each(|child_node| {
+            queue.push_back(child_node);
+        })
+    }
+    println!("");
+}
+
+fn do_tree<'a,T,N>(tree: &'a T)
+where
+    T: Tree<'a,N>,
+    N: 'a,
+    N: Node<'a>,
+    N: Debug {
+    tree.bfs_iter().for_each(|x| println!("{:?}", x))
+}
+
+#[cfg(test)]
+mod blog {
     use super::*;
     #[test]
-    fn t_tree() {
-        let tree: Node = Node {
-            val: String::from("a"),
+    fn test_tree() {
+        let root: TestNode = TestNode {
+            val: "a",
             children: vec![
-                Node { val: String::from("b"), children: vec![
-                    Node { val: String::from("e"), children: vec![]},
+                TestNode { val: "b", children: vec![
+                    TestNode { val: "e", children: vec![]},
                 ] },
-                Node { val: String::from("c"), children: vec![
-                    Node { val: String::from("f"), children: vec![]},
-                    Node { val: String::from("g"), children: vec![] }
+                TestNode { val: "c", children: vec![
+                    TestNode { val: "f", children: vec![]},
+                    TestNode { val: "g", children: vec![] }
                 ] },
-                Node { val: String::from("d"), children: vec![] }
+                TestNode { val: "d", children: vec![] }
             ]
         };
-        read_tree(&tree, SearchMode::BreadthFirst);
-        read_tree(&tree, SearchMode::DepthFirst);
+        let tree: TestTree = TestTree::new(root);
+        assert!(["a","b","c","d","e","f","g"].iter().eq(tree.bfs_iter().map(|n| &n.val)));
+        assert!(["a","b","e","c","f","g","d"].iter().eq(tree.dfs_iter().map(|n| &n.val)));
     }
 
+    #[test]
+    fn test_tree_mut() {
+        let root: TestNode = TestNode {
+            val: "a",
+            children: vec![
+                TestNode { val: "b", children: vec![
+                    TestNode { val: "e", children: vec![]},
+                ] },
+                TestNode { val: "c", children: vec![
+                    TestNode { val: "f", children: vec![]},
+                    TestNode { val: "g", children: vec![] }
+                ] },
+                TestNode { val: "d", children: vec![] }
+            ]
+        };
+        let mut tree: TestTree = TestTree::new(root);
+        let found = tree.get_mut_node("b");
+        if let Some(node) = found {
+            node.children.push(TestNode { val: "x", children: vec![] });
+        }
+    }
 }
