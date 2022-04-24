@@ -1,37 +1,20 @@
-
-use std::{collections::{VecDeque, HashMap}, slice::Iter, borrow::Borrow, fmt::Debug};
-
-// trait Node<'a,T: 'a> {
-//     type NodeIterator : Iterator<Item=&'a T>;
-//     fn leaves(&'a self) -> Self::NodeIterator;
-// }
-//
-// struct TestNode {
-//     pub val: String,
-//     pub children: Vec<TestNode>
-// }
-//
-// impl<'a> Node<'a,TestNode> for TestNode {
-//     type NodeIterator = Iter<'a,TestNode>;
-//     fn leaves(&'a self) -> Self::NodeIterator {
-//         return self.children.iter();
-//     }
-// }
-
-//struct TreeIter<'a,T> where T: Node<'a>{
-//    pub queue: VecDeque<&'a T>
-//}
-//
-//
-impl <'a,T>TreeIter<'a,T> where T: Node<'a> {
-    fn new( queue: VecDeque<&'a T>, dfs: bool ) -> Self {
-        return Self{queue, dfs}
-    }
-}
+use std::{collections::{VecDeque, HashMap}, slice::Iter, borrow::{Borrow, BorrowMut}, fmt::Debug, mem::replace};
 
 struct TreeIter<'a,T> where T: Node<'a> {
     pub dfs: bool,
     pub queue: VecDeque<&'a T>
+}
+
+struct TreeIterMut<'a,T> where T: Node<'a> {
+    pub dfs: bool,
+    pub queue: VecDeque<&'a mut T>,
+    pub remaining_queue: VecDeque<&'a mut T>
+}
+
+impl <'a,T>TreeIter<'a,T> where T: Node<'a> {
+    fn new( queue: VecDeque<&'a T>, dfs: bool ) -> Self {
+        return Self{queue, dfs}
+    }
 }
 
 impl <'a,T>Iterator for TreeIter<'a,T> where T: Node<'a> {
@@ -55,6 +38,32 @@ impl <'a,T>Iterator for TreeIter<'a,T> where T: Node<'a> {
     }
 }
 
+impl <'a,T>TreeIterMut<'a,T> where T: Node<'a> {
+    fn new( queue: VecDeque<&'a mut T>, dfs: bool ) -> Self {
+        return Self{queue, dfs, remaining_queue: VecDeque::new()}
+    }
+}
+
+impl <'a,T>Iterator for TreeIterMut<'a,T> where T: Node<'a> {
+    type Item = &'a mut T;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.remaining_queue.len() > 0 {
+            return self.remaining_queue.pop_front()
+        }
+        // Using mem::replace for atomically removing and adding nodes to queue
+        if self.queue.len() > 0  {
+            println!("ITEMS:");
+            let d: &'a mut T = self.queue.pop_front().unwrap();
+            let nodes = VecDeque::from_iter(d.leaves_mut());
+            self.remaining_queue = replace(&mut self.queue, nodes);
+            println!("QUEUE {:?}",self.queue.len());
+            return self.queue.pop_front()
+        }
+        print!("NONE");
+        return None
+    }
+}
+
 #[derive(Debug)]
 struct TestNode {
     pub val: &'static str,
@@ -64,6 +73,10 @@ struct TestNode {
 trait Tree<'a,T>
 where T: Node<'a> {
     fn root(&self) -> &T;
+    fn root_mut(&mut self) -> &mut T;
+    fn bfs_iter_mut(&'a mut self) -> TreeIterMut<T> {
+        return TreeIterMut::new( VecDeque::from([self.root_mut()]), false );
+    }
     fn bfs_iter(&'a self) -> TreeIter<T> {
         return TreeIter::new( VecDeque::from([self.root()]), false );
     }
@@ -76,10 +89,12 @@ struct TestTree{
     pub root: TestNode
 }
 
-// NOTE: here get to use an anonymous lifetime because there's no reference to it in implementation?
 impl Tree<'_,TestNode> for TestTree{
     fn root(&self) -> &TestNode {
         return &self.root;
+    }
+    fn root_mut(&mut self) -> &mut TestNode {
+        return &mut self.root;
     }
 }
 
@@ -168,9 +183,11 @@ mod blog {
             ]
         };
         let mut tree: TestTree = TestTree::new(root);
-        let found = tree.get_mut_node("b");
+        let found = tree.bfs_iter_mut().find(|n| n.val == "b");
         if let Some(node) = found {
-            node.children.push(TestNode { val: "x", children: vec![] });
+            node.children.pop();
         }
+        read_tree(tree.root());
+        tree.bfs_iter_mut().for_each(|n| { n.children.pop(); });
     }
 }
