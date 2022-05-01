@@ -5,9 +5,10 @@ use wasm_bindgen::prelude::*;
 
 //mod js_bridge;
 mod tokens;
-mod tree_reader;
+mod tree;
 mod compilation_targets;
 mod parser;
+
 
 #[wasm_bindgen]
 pub fn compile_md_from_js(input: &str) -> String {

@@ -1,5 +1,7 @@
 use std::fmt;
 
+use crate::tree::*;
+
 /**
  * Tokens contain information about markdown elements in a general manner,
  * without dictating any details about how they may eventually be compiled.
@@ -11,18 +13,17 @@ use std::fmt;
 // TYPES
 // ----------------------------------------------------------------------------
 
+#[derive(PartialEq)]
+#[derive(Clone)]
 pub enum Token {
     Header(Header),
     Paragraph(Paragraph),
+    List(List),
     PlainText(PlainText),
     Italic(Italic),
     InlineCode(InlineCode),
     Link(Link),
-    Bold(Bold)
-}
-
-pub trait HigherLevel {
-    fn children(&self) -> &Vec<Token>;
+    Bold(Bold),
 }
 
 pub trait Leveled {
@@ -41,33 +42,60 @@ pub trait TextComponent {
 // TOKENS
 // ----------------------------------------------------------------------------
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct List {
+}
+
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct OrderedList {
+}
+
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Header {
-    pub children: Vec<Token>,
     pub level: u32
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Paragraph {
-    pub children: Vec<Token>
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct PlainText {
     pub text: String
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Italic {
-    pub text: String
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct InlineCode {
-    pub text: String
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Bold {
-    pub text: String
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
 pub struct Link {
-    pub children: Vec<Token>,
     pub url: String
 }
 
@@ -82,91 +110,18 @@ impl Leveled for Header {
     }
 }
 
-macro_rules! impl_HigherLevel {
-    (for $($t:ty),+) => {
-        $(impl HigherLevel for $t {
-            fn children(&self) -> &Vec<Token> {
-                &self.children
-            }
-        })*
+impl TextComponent for PlainText {
+    fn text(&self) -> String {
+        self.text.clone()
     }
 }
-
-macro_rules! impl_TextComponent {
-    (for $($t:ty),+) => {
-        $(impl TextComponent for $t {
-            fn text(&self) -> String {
-                self.text.clone()
-            }
-        })*
-    }
-}
-
-impl_HigherLevel!(for Header, Paragraph, Link);
 
 // TextComponents are generally inline and do not have children
-impl_TextComponent!(for PlainText, Italic, Bold, InlineCode);
 
 // ----------------------------------------------------------------------------
 // DEBUG IMPLEMENTATIONS
 // ----------------------------------------------------------------------------
 
-impl fmt::Debug for Header {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Header")
-         .field("children", &self.children().len())
-         .field("level", &self.level())
-         .finish()
-    }
-}
-
-impl fmt::Debug for Paragraph {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Paragraph")
-         .field("children", &self.children().len())
-         .finish()
-    }
-}
-
-impl fmt::Debug for Link {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Link")
-         .field("url", &self.url)
-         .finish()
-    }
-}
-
-impl fmt::Debug for PlainText {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PlainText")
-            .field("content", &self.text())
-            .finish()
-    }
-}
-
-impl fmt::Debug for Bold {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Bold")
-            .field("content", &self.text())
-            .finish()
-    }
-}
-
-impl fmt::Debug for Italic {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Italic")
-            .field("content", &self.text())
-            .finish()
-    }
-}
-
-impl fmt::Debug for InlineCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Italic")
-            .field("content", &self.text())
-            .finish()
-    }
-}
 
 impl fmt::Debug for Token {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -186,6 +141,6 @@ impl fmt::Debug for Token {
 // MD STRUCTURE TYPE ALIASES
 // ----------------------------------------------------------------------------
 
-pub type MdLine = Vec<Token>;
+pub type MdLine = Tree<Token>;
 pub type MdSyntaxTree = Vec<MdLine>;
 

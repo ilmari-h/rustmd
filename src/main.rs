@@ -2,6 +2,7 @@ use std::env;
 use std::fs;
 mod tokens;
 mod parser;
+mod tree;
 mod compilation_targets;
 use compilation_targets::to_html::*;
 
@@ -11,7 +12,6 @@ fn main() {
     println!("Searching for {}",filename);
     let contents = fs::read_to_string(filename).expect("Error reading file.");
     let stuff = parser::parse_md_str(&contents);
-    println!("{:?}", stuff);
     let html = compile_all(stuff);
     println!("{:?}", html);
 }

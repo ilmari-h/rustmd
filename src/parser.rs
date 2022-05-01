@@ -16,8 +16,10 @@ use nom::{
     multi::{many1_count, many1, many_till, many0, fold_many0}, // Get all lines and apply syntax parsing
     error::ErrorKind, Parser
 };
+use std::{collections::VecDeque, vec};
+
 //#[macro_use]
-use crate::tokens::*;
+use crate::{tokens::*, tree::{Tree, TreeIndex}};
 
 // TODO: other inline symbols?
 const INLINE_SYMBOL: char = '*';
@@ -36,6 +38,7 @@ fn take_line(s: &str) -> IResult<&str, &str> {
 }
 
 pub fn parse_md_str(input: &str) -> MdSyntaxTree {
+    println!("Parsing lines...\n");
     let lines = fold_many0(
         take_line,
         Vec::new,
@@ -44,20 +47,44 @@ pub fn parse_md_str(input: &str) -> MdSyntaxTree {
 
     return lines.unwrap().1;
 }
+/*
+pub fn parse_line(line_str: &str) -> MdLine {
+}
+    */
 
 pub fn parse_line(line_str: &str) -> MdLine {
 
-    // Test first token, in case it's a line consuming Token. In this case all input is consumed.
-    // Eg. A header.
-    return vec![parse_line_consuming_token(line_str).unwrap().1];
+    if let Ok((rem, token)) = parse_line_consuming_token(line_str) {
+
+        // Fill children in line consuming token's syntax tree.
+        let mut stack: VecDeque<(usize, &str, Token)> =
+            parse_children(token.child_parsers(), rem).iter().map(|c| (0,c.0,c.1.clone())).collect();
+
+        let mut line: Tree<Token> = Tree::new(
+            token
+        );
+
+        while let Some((p_idx,unconsumed, child)) = stack.pop_front() {
+            let parsers = child.child_parsers();
+            let added = line.add_node_by_index(TreeIndex::Arena(p_idx), child);
+            let idx = added.unwrap().raw_idx;
+            let stack_extended: VecDeque<(usize, &str, Token)> =
+                parse_children(parsers, unconsumed).iter().map(|c| (idx,c.0,c.1.clone())).collect();
+            stack.extend(stack_extended);
+            // added.unwrap().parent_raw_idx;
+        }
+        println!("{}",line);
+        return line;
+    }
+
+    // Empty Line
+    return Tree::new(Token::PlainText(PlainText{text:"".to_string()}));
 }
 
-// Implement Parsable for tokens
-pub trait Parsable {
-    fn parse(source: &str) -> IResult<&str,Token>;
-}
 
-fn try_all_parsers(allowed_parsers: Vec<fn(&str) -> IResult<&str, Token>>, source: &str) -> IResult<&str,Token>{
+fn try_all_parsers(
+    allowed_parsers: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, source: &str)
+-> IResult<&str,(&str,Token)>{
     if source.is_empty() {
         return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}));
     }
@@ -72,7 +99,9 @@ fn try_all_parsers(allowed_parsers: Vec<fn(&str) -> IResult<&str, Token>>, sourc
  Attempt to take a Token. If no Token is found, get leading plain text until
  Token is found or consume all input and return just PlainText.
 */
-fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&str, Token>>, src: &str) -> IResult<&str,Vec<Token>>{
+fn take_tokens_with_leading_plaintext(
+    token_parsers: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, src: &str)
+-> IResult<&str,Vec<(&str,Token)>>{
 
     if src.is_empty(){
             return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}))
@@ -89,10 +118,19 @@ fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&st
                     Ok((remt, (chars,tk))) => {
 
                         let plain_text: String = chars.into_iter().collect();
-                        return Ok((remt,vec![Token::PlainText(PlainText{text: plain_text}),tk]));
+                        return Ok((
+                            remt,
+                            vec![
+                                ("",Token::PlainText(PlainText{text: plain_text})), // Empty string since plain text has no children
+                                tk]
+                            ));
                     },
                     // Reached end without finding tokens
-                    Err(_) => Ok(("",vec![Token::PlainText(PlainText{text: src.to_string()})]))
+                    Err(_) => Ok((
+                        "",
+                        vec![
+                            ("",Token::PlainText(PlainText{text: src.to_string()}))] // Empty string since plain text has no children
+                        ))
                 }
             }
             // Found Token in the beginning, no plain text.
@@ -105,15 +143,15 @@ fn take_tokens_with_leading_plaintext(token_parsers: Vec<fn(&str) -> IResult<&st
     }
 }
 
-fn parse_children(allowed_children: Vec<fn(&str) -> IResult<&str, Token>>, src: &str) -> Vec<Token> {
+fn parse_children(
+    allowed_children: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, src: &str)
+-> Vec<(&str,Token)> { // Vec<(&str, Token)>
 
     let lines = fold_many0(
         |s| take_tokens_with_leading_plaintext(allowed_children.clone(), s),
         Vec::new,
         |mut res: Vec<_>, mut tokens| {res.append(&mut tokens); res}
     )(src);
-
-    println!("{:?}",lines);
 
     match lines {
         Ok((_,tokens)) => {
@@ -127,8 +165,8 @@ fn parse_children(allowed_children: Vec<fn(&str) -> IResult<&str, Token>>, src: 
 
 fn parse_line_consuming_token(source: &str) -> IResult<&str, Token> {
     let line_consuming_tokens = [
-        Header::parse,
-        Paragraph::parse
+        Header::parse_lines,
+        Paragraph::parse_lines
     ];
     for parse in line_consuming_tokens {
         let res = parse(source);
@@ -139,19 +177,31 @@ fn parse_line_consuming_token(source: &str) -> IResult<&str, Token> {
     return Err(Err::Error(err));
 }
 
-impl Parsable for Header {
-    fn parse(source: &str) -> IResult<&str,Token> {
+/**
+* Parse consuming the entire line. Returns remainder for children.
+*/
+pub trait LineConsumingParse {
+    fn parse_lines(source: &str) -> IResult<&str,Token>;
+}
+
+/**
+* Parse a token on a line. Remainder is the remaining line, tuple is string for children and Token
+* itself.
+*/
+pub trait Parse {
+    fn parse(source: &str) -> IResult<&str,(&str,Token)>;
+}
+
+impl LineConsumingParse for Header {
+    fn parse_lines(source: &str) -> IResult<&str,Token> {
 
         let count_r: IResult<&str, usize> = terminated(many1_count(tag("#")), tag(" "))(source);
         match count_r {
             Ok((rem, count)) => {
 
-                // Here call some generic method to consume all children until empty remainder.
-                let children = parse_children(vec![Bold::parse, Italic::parse,Link::parse, InlineCode::parse], rem);
                 return Ok((
-                    "",
+                    rem,
                     Token::Header(Header{
-                        children,
                         level: count as u32
                     })
                 ))
@@ -161,28 +211,39 @@ impl Parsable for Header {
     }
 }
 
-impl Parsable for Paragraph {
-    fn parse(source: &str) -> IResult<&str,Token> {
-        let children: Vec<Token> = parse_children(vec![Bold::parse, Italic::parse, Link::parse, InlineCode::parse],source);
+impl LineConsumingParse for Paragraph {
+    fn parse_lines(source: &str) -> IResult<&str,Token> {
         return Ok((
-            "",
-            Token::Paragraph(Paragraph{ children })
+            source,
+            Token::Paragraph(Paragraph{})
         ));
     }
 }
 
-impl Parsable for Italic {
-    fn parse(source: &str) -> IResult<&str,Token> {
+impl LineConsumingParse for List {
+    fn parse_lines(source: &str) -> IResult<&str,Token> {
+        return Ok((
+            source,
+            Token::List(List{})
+        ));
+    }
+}
+
+impl Parse for Italic {
+    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
         let res: IResult<&str, &str> = delimited( char('*'), is_not("*"), char('*'))(source);
         match res {
-            Ok((rem, consumed)) => Ok((rem, Token::Italic(Italic{text: consumed.to_string()}))),
+            Ok((rem, consumed)) => Ok((
+                rem,
+                (consumed,Token::Italic(Italic{}))
+            )),
             Err(e) => Err(e)
         }
     }
 }
 
-impl Parsable for Link {
-    fn parse(source: &str) -> IResult<&str,Token> {
+impl Parse for Link {
+    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
         let caption = terminated(
             preceded(tag("["), take_till(|c| c == ']')),
             tag("]"));
@@ -193,10 +254,9 @@ impl Parsable for Link {
         let res:IResult<&str, (&str,&str)> = tuple((caption,url))(source);
         match res {
             Ok((rem, (caption,url))) => {
-                let children: Vec<Token> = parse_children(vec![Bold::parse, Italic::parse],caption);
                 return Ok((
                     rem,
-                    Token::Link(Link{children,url: url.to_string()})
+                    (caption,Token::Link(Link{url: url.to_string()}))
                     ))
                 }
             ,
@@ -205,26 +265,49 @@ impl Parsable for Link {
     }
 }
 
-impl Parsable for InlineCode {
-    fn parse(source: &str) -> IResult<&str,Token> {
+impl Parse for InlineCode {
+    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
         let res: IResult<&str, &str> = terminated(
             preceded(tag("`"), take_till(|c| c == '`')),
             tag("`"))(source);
         match res {
-            Ok((rem, consumed)) => Ok((rem, Token::InlineCode(InlineCode{text: consumed.to_string()}))),
+            Ok((rem, consumed)) => Ok((
+                rem,
+                (consumed,Token::InlineCode(InlineCode{}))
+            )),
             Err(e) => Err(e)
         }
     }
 }
 
-impl Parsable for Bold {
-    fn parse(source: &str) -> IResult<&str,Token> {
+impl Parse for Bold {
+    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
         let res: IResult<&str, &str> = terminated(
             preceded(tag("**"), take_till(|c| c == INLINE_SYMBOL)),
             tag("**"))(source);
         match res {
-            Ok((rem, consumed)) => Ok((rem, Token::Bold(Bold{text: consumed.to_string()}))),
+            Ok((rem, consumed)) => Ok((rem,
+                (consumed,Token::Bold(Bold{}))
+            )),
             Err(e) => Err(e)
+        }
+    }
+}
+
+pub trait HigherLevel {
+    fn child_parsers(&self) -> Vec<fn(&str) -> IResult<&str, (&str,Token)>>;
+}
+
+impl HigherLevel for Token {
+    fn child_parsers(&self) -> Vec<fn(&str) -> IResult<&str, (&str,Token)>> {
+        match self {
+            Token::Header(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
+            Token::Paragraph(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
+            Token::Link(_) => vec![Italic::parse, Bold::parse],
+            Token::Bold(_) => vec![Italic::parse, Link::parse],
+            Token::Italic(_) => vec![Bold::parse, Link::parse],
+            Token::InlineCode(_) => vec![Italic::parse, Bold::parse],
+            _ => vec![]
         }
     }
 }
