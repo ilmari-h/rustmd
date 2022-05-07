@@ -99,6 +99,12 @@ pub struct Link {
     pub url: String
 }
 
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct ListItem {
+}
+
 // ----------------------------------------------------------------------------
 // TRAIT IMPLEMENTATIONS FOR TYPES
 // ----------------------------------------------------------------------------
@@ -130,6 +136,7 @@ impl fmt::Debug for Token {
             Token::PlainText(t) => return t.fmt(f),
             Token::Italic(t) => return t.fmt(f),
             Token::Link(t) => return t.fmt(f),
+            Token::List(t) => return t.fmt(f),
             Token::Bold(t) => return t.fmt(f),
             Token::Paragraph(t) => return t.fmt(f),
             Token::InlineCode(t) => return t.fmt(f)

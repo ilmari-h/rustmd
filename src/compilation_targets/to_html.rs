@@ -11,6 +11,8 @@ pub fn compile_all(input: MdSyntaxTree) -> String {
     return input.compile();
 }
 
+// TODO: generic version of this that takes a function argument, similar use as `fold`
+// Allows implementing different compilation targets
 impl Compile<TargetHTML> for MdLine {
     fn compile(&self) -> TargetHTML {
 
@@ -59,11 +61,12 @@ impl Compile<HtmlTags> for Token {
     fn compile(&self) -> HtmlTags {
         match self {
             Token::Header(h) => return h.compile(),
+            Token::List(t) => return t.compile(),
+            Token::Paragraph(t) => return t.compile(),
             Token::PlainText(t) => return t.compile(),
             Token::InlineCode(t) => return t.compile(),
             Token::Italic(t) => return t.compile(),
             Token::Bold(t) => return t.compile(),
-            Token::Paragraph(t) => return t.compile(),
             Token::Link(t) => return t.compile(),
         }
     }
@@ -115,5 +118,12 @@ impl Compile<HtmlTags> for InlineCode {
 
     fn compile(&self) -> HtmlTags {
         return ("<code>".to_string(), "</code>".to_string())
+    }
+}
+
+impl Compile<HtmlTags> for List {
+
+    fn compile(&self) -> HtmlTags {
+        return ("<ul>".to_string(), "</ul>".to_string())
     }
 }

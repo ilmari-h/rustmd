@@ -1,4 +1,4 @@
-use std::{usize, collections::VecDeque, ops::Index, fmt::{Display, write}, fmt::Debug};
+use std::{usize, collections::VecDeque, ops::Index, fmt::Display, fmt::Debug};
 
 #[derive(Debug)]
 pub struct Node<T> {
@@ -109,7 +109,6 @@ where T: PartialEq {
 }
 
 impl<T> Tree<T>
-
 where T: PartialEq {
     pub fn new(root: T) -> Self {
         return Self{nodes: vec![Node{val:root, children: Vec::new(), level: 0,idx: 0}]};
