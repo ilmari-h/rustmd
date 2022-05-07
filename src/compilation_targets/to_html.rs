@@ -68,6 +68,7 @@ impl Compile<HtmlTags> for Token {
             Token::Italic(t) => return t.compile(),
             Token::Bold(t) => return t.compile(),
             Token::Link(t) => return t.compile(),
+            Token::ListItem(t) => return t.compile(),
         }
     }
 }
@@ -125,5 +126,12 @@ impl Compile<HtmlTags> for List {
 
     fn compile(&self) -> HtmlTags {
         return ("<ul>".to_string(), "</ul>".to_string())
+    }
+}
+
+impl Compile<HtmlTags> for ListItem {
+
+    fn compile(&self) -> HtmlTags {
+        return ("<li>".to_string(), "</li>".to_string())
     }
 }

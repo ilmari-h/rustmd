@@ -239,7 +239,7 @@ impl LineConsumingParse for Paragraph {
 impl LineConsumingParse for List {
     fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
         //let line_number = preceded(digit1, tag(". "));
-        let list_line = terminated(preceded(tag("- "), take_line), newline);
+        let list_line = preceded(tag("- "), take_line);
         let take_list_lines = many1(list_line)(source);
         match take_list_lines {
             Ok((rem_l, consumed)) => {
@@ -321,17 +321,10 @@ impl Parse for Bold {
     }
 }
 
+// Consumes everything as any input passed to this will be a complete line
 impl Parse for ListItem {
     fn parse(source: &str) -> IResult<&str,(&str,Token)> {
-        let res: IResult<&str, &str> = terminated(
-            preceded(tag("**"), take_till(|c| c == INLINE_SYMBOL)),
-            tag("**"))(source);
-        match res {
-            Ok((rem, consumed)) => Ok((rem,
-                (consumed,Token::Bold(Bold{}))
-            )),
-            Err(e) => Err(e)
-        }
+        return Ok(("",(source, Token::ListItem(ListItem{}))));
     }
 }
 
@@ -344,6 +337,8 @@ impl HigherLevel for Token {
         match self {
             Token::Header(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
             Token::Paragraph(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
+            Token::List(_) => vec![ListItem::parse],
+            Token::ListItem(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
             Token::Link(_) => vec![Italic::parse, Bold::parse],
             Token::Bold(_) => vec![Italic::parse, Link::parse],
             Token::Italic(_) => vec![Bold::parse, Link::parse],
@@ -374,7 +369,7 @@ mod tests {
 **Bold text** Plain text in between *Italics after*\n\
 Here's some plain text *and italics* and plain text *and italics again*\n
 [This is a link](www.gnu.org)\n
-- List item\n
+- List item
 - Another item\n
 [**This is a bold link**](www.gnu.org)\n
 \nFailed italics text*\n**Unterminated bold\n# Last header\n"

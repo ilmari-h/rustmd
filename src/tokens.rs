@@ -24,6 +24,7 @@ pub enum Token {
     InlineCode(InlineCode),
     Link(Link),
     Bold(Bold),
+    ListItem(ListItem),
 }
 
 pub trait Leveled {
@@ -139,7 +140,8 @@ impl fmt::Debug for Token {
             Token::List(t) => return t.fmt(f),
             Token::Bold(t) => return t.fmt(f),
             Token::Paragraph(t) => return t.fmt(f),
-            Token::InlineCode(t) => return t.fmt(f)
+            Token::InlineCode(t) => return t.fmt(f),
+            Token::ListItem(t) => return t.fmt(f)
         }
     }
 }
