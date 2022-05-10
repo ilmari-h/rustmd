@@ -6,7 +6,7 @@ Converts markdown into a syntax tree of tokens with the help of [nom](https://gi
 
 ## Memory safety
 
-Achieving memory safety is a core feature of Rust. Rust allows (forces) the programmer to explicitly handle potentially unsafe situations. Eg. an indexation into an array will produce either a value or instance of `Error`. The programmer is heavily encouraged to handle the `Error`-case by. The only other alternative is to call `unwrap` on a potentially unsafe operation. If this operation produces an `Error`, since it's not being  handled the program will immediately panic terminating itself.
+Achieving memory safety is a core feature of Rust. Rust allows (forces) the programmer to explicitly handle potentially unsafe situations. Eg. an indexation into an array will produce either a value or instance of `Error`. The programmer is encouraged to handle the `Error`-case by having to check for an `Error` value before accessing the result of the operation. The only other alternative is to call `unwrap` on a potentially unsafe operation. If this operation produces an `Error`, since it's not being  handled the program will immediately panic terminating itself.
 Along with borrow checking rules this is one of the primary mechanisms by which Rust avoids overflow and other memory management related vulnerabilities.
 
 For the sake of completeness, this implementation attempts to completely avoid any `unwrap` calls. There are currently like two of them in the code, which I've been too lazy to explicitly handle.
