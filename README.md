@@ -11,18 +11,30 @@ Along with borrow checking rules this is one of the primary mechanisms by which 
 
 For the sake of completeness, this implementation attempts to completely avoid any `unwrap` calls. There are currently like two of them in the code, which I've been too lazy to explicitly handle.
 
-There are no `unsafe`-blocks in the code, which would allow unsafe operations on memory; The implementation is guaranteed to work in a memory safe manner by the Rust compiler.
+There are no `unsafe`-blocks in the code, which would allow unsafe operations on memory; The implementation is guaranteed by the Rust compiler to work in a memory safe manner.
 
 ## Safe parsing
 
-
-
-## Difficulties with trees from the perspective of memory safety
-
+Writing a parser from scratch would be a project on it's own with a lot of potential for unsafe practices.
+The library *nom* was chosen to help with this.
+By using *nom*, there's no need to index into a fixed sized string and operate on individual bytes or anything like that, which could potentially cause vulnerabilities.
+Instead, *nom* provides a declarative syntax that makes writing safe and correct parsers convinient.
 
 ## Testing
 
-## The state of the implementation
+Tests were written using Rusts built in assertion macros and testing framework.
+
+Tests can be ran by running: `yarn test`.
+
+## The state of the implementation and self evaluation
 
 The current implementation is far enough to illustrate that it's now possible to support the entirety of the markdown syntax by simply defining more `Tokens` and implementing the `Parse`- and `Compile`- traits for them.
 So *optimistically* the only thing left to do for a complete markdown parser is manual work, since the logic has been figured out.
+
+The focus of the project from the POV of secure programming moved from higher level to a lower as the implementation went on.
+
+The achieved goals of secure programming here are:
+
+- Secure practices in accessing memory: there are no unsafe allocations or any potentials for overflow.
+
+- Error handling: by virtue of

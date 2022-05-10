@@ -6,8 +6,7 @@
   "scripts": {
     "build": "wasm-pack build --target web && cp -r ./pkg/* ./dist/ && cp -r ./web/* ./dist/ && rm -r ./pkg ./dist/package.json",
     "dev": "python3 -m http.server --directory dist",
-    "test": "cargo test tests -- --nocapture",
-    "testb": "cargo test blog -- --nocapture"
+    "test": "cargo test parser_t -- --nocapture"
   },
   "dependencies": {
     "wasm-server": "^0.0.4",

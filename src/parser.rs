@@ -297,7 +297,7 @@ impl HigherLevel for Token {
 }
 
 #[cfg(test)]
-mod tests {
+mod parser_t {
     use super::*;
 
     fn match_syntax(md_syntax: MdSyntaxTree, expected: Vec<Token>) {
