@@ -114,6 +114,10 @@ where T: PartialEq {
         return Self{nodes: vec![Node{val:root, children: Vec::new(), level: 0,idx: 0}]};
     }
 
+    pub fn size(&self) -> usize {
+        self.nodes.len()
+    }
+
     pub fn iter_bfs(&self) -> TreeIter<'_,T> {
         let references: Vec<&Node<T>> = self.nodes.iter().map(|owned| owned).collect();
         return  TreeIter{dfs: false, idx_queue : VecDeque::from([0]), arena: references };
