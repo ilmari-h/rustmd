@@ -22,7 +22,7 @@ Instead, *nom* provides a declarative syntax that makes writing safe and correct
 
 ## Testing
 
-Tests were written using Rusts built in assertion macros and testing framework.
+Tests were written using Rust's built in assertion macros and testing framework.
 
 Tests can be ran by running: `yarn test`.
 
@@ -33,8 +33,4 @@ So *optimistically* the only thing left to do for a complete markdown parser is 
 
 The focus of the project from the POV of secure programming moved from higher level to a lower as the implementation went on.
 
-The achieved goals of secure programming here are:
-
-- Secure practices in accessing memory: there are no unsafe allocations or any potentials for overflow.
-
-- Error handling: by virtue of
+The main achieved goal of secure programming here is secure practices in accessing memory: there are no unsafe allocations or any potentials for overflow. This proved difficult at times by virtue of the language's compiler being very conservative in what it considers to be safe code. Especially creating and using a syntax tree proved challenging, as tree-structures are a domain where it's easy to have things like dangling pointers and other sources of vulnerabilities.
