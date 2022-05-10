@@ -47,3 +47,7 @@ section {
 section * {
   margin: 0;
 }
+
+section div {
+  margin-top: 16px;
+}

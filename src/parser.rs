@@ -17,9 +17,6 @@ use std::{collections::VecDeque, vec};
 //#[macro_use]
 use crate::{tokens::*, tree::{Tree, TreeIndex}};
 
-// TODO: other inline symbols?
-const INLINE_SYMBOL: char = '*';
-
 /**
  Takes a line from a string of one or more lines. Returns Err if input is empty.
 */
@@ -46,29 +43,27 @@ pub fn parse_line(line_str: IResult<&str,(&str,Token)>) -> MdLine {
 
 pub fn consume_lines(input: &str) -> IResult<&str,MdLine> {
 
-    if let Ok((rem,(child_lines, token))) = parse_line_consuming_token(input) {
+    let (rem,(child_lines, token)) = parse_line_consuming_token(input)?;
 
-        // Fill children in syntax tree by folding over each line consumed by the parent Token.
-        let tree = child_lines.iter().fold(Tree::new(token.clone()), |mut acc,c_str| {
-            let mut stack: VecDeque<(usize, &str, Token)> =
-                parse_children(token.child_parsers(), c_str).iter().map(|c| (0,c.0,c.1.clone())).collect();
+    // Fill children in syntax tree by folding over each line consumed by the parent Token.
+    let tree = child_lines.iter().fold(Tree::new(token.clone()), |mut acc,c_str| {
+        let mut stack: VecDeque<(usize, &str, Token)> =
+        parse_children(token.child_parsers(), c_str).iter().map(|c| (0,c.0,c.1.clone())).collect();
 
 
-            while let Some((p_idx,unconsumed, child)) = stack.pop_front() {
-                let parsers = child.child_parsers();
-                let added = acc.add_node_by_index(TreeIndex::Arena(p_idx), child);
-                let idx = added.unwrap().raw_idx;
-                let stack_extended: VecDeque<(usize, &str, Token)> =
-                    parse_children(parsers, unconsumed).iter().map(|c| (idx,c.0,c.1.clone())).collect();
-                stack.extend(stack_extended);
-            }
-            acc
-        });
-        print!("{}",tree);
-        return Ok((rem,tree));
-    }
+        while let Some((p_idx,unconsumed, child)) = stack.pop_front() {
+            let parsers = child.child_parsers();
+            let added = acc.add_node_by_index(TreeIndex::Arena(p_idx), child);
+            let idx = added.unwrap().raw_idx;
+            let stack_extended: VecDeque<(usize, &str, Token)> =
+            parse_children(parsers, unconsumed).iter().map(|c| (idx,c.0,c.1.clone())).collect();
+            stack.extend(stack_extended);
+        }
+        acc
+    });
+    print!("{}",tree);
+    return Ok((rem,tree));
 
-    return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}));
 }
 
 
@@ -97,40 +92,32 @@ fn take_tokens_with_leading_plaintext(
             return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}))
     }
 
-    let leading_token = many0( |s| try_all_parsers(token_parsers.clone(), s))(src);
-    match leading_token {
-        Ok((rem,consumed)) => {
-            // If no token found at head of input, consume into PlainText until found token or EOF.
-            if consumed.is_empty() {
-                let leading_plain_text_chars = many_till(anychar,|s| try_all_parsers(token_parsers.clone(), s))(src);
+    let (rem,consumed) = many0( |s| try_all_parsers(token_parsers.clone(), s))(src)?;
+    // If no token found at head of input, consume into PlainText until found token or EOF.
+    if consumed.is_empty() {
+        let leading_plain_text_chars = many_till(anychar,|s| try_all_parsers(token_parsers.clone(), s))(src);
 
-                return match leading_plain_text_chars {
-                    Ok((remt, (chars,tk))) => {
+        return match leading_plain_text_chars {
+            Ok((remt, (chars,tk))) => {
 
-                        let plain_text: String = chars.into_iter().collect();
-                        return Ok((
-                            remt,
-                            vec![
-                                ("",Token::PlainText(PlainText{text: plain_text})), // Empty string since plain text has no children
-                                tk]
-                            ));
-                    },
-                    // Reached end without finding tokens
-                    Err(_) => Ok((
-                        "",
-                        vec![
-                            ("",Token::PlainText(PlainText{text: src.to_string()}))] // Empty string since plain text has no children
-                        ))
-                }
-            }
-            // Found Token in the beginning, no plain text.
-            return Ok((rem,consumed));
-        },
-        Err(_) => {
-            println!("ERR WITH INPUT {:?}", src);
-            return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}))
+                let plain_text: String = chars.into_iter().collect();
+                return Ok((
+                    remt,
+                    vec![
+                        ("",Token::PlainText(PlainText{text: plain_text})), // Empty string since plain text has no children
+                        tk]
+                ));
+            },
+            // Reached end without finding tokens
+            Err(_) => Ok((
+                "",
+                vec![
+                    ("",Token::PlainText(PlainText{text: src.to_string()}))] // Empty string since plain text has no children
+            ))
         }
     }
+    // Found Token in the beginning, no plain text.
+    return Ok((rem,consumed));
 }
 
 fn parse_children(
@@ -190,49 +177,30 @@ pub trait Parse {
 impl LineConsumingParse for Header {
     fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
 
-        // TODO
-        let line = take_line(source);
-        match line {
-            Ok((rem_l, consumed)) => {
-                let count_r: IResult<&str, usize> = terminated(many1_count(tag("#")), tag(" "))(consumed);
-                match count_r {
-                    Ok((rem, count)) => {
-
-                        return Ok((
-                            rem_l, // Remaining lines
-                            (
-                                vec![rem], // Possible children
-                                Token::Header(Header{
-                                level: count as u32
-                                })
-                            )
-                        ))
-                    },
-                    Err(e) => return Err(e)
-                }
-
-            },
-            Err(e) => return Err(e)
-        }
-
+        let (rem_l,consumed) = take_line(source)?;
+        let (rem,count) = terminated(many1_count(tag("#")), tag(" "))(consumed)?;
+        return Ok((
+            rem_l, // Remaining lines
+            (
+                vec![rem], // Possible children
+                Token::Header(Header{
+                    level: count as u32
+                })
+            )
+        ))
     }
 }
 
 impl LineConsumingParse for Paragraph {
     fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
-        let line = take_line(source);
-        match line {
-            Ok((rem_l, consumed)) => {
-                return Ok((
-                    rem_l, // Remaining lines
-                    (
-                        vec![consumed], // Possible children
-                        Token::Paragraph(Paragraph{})
-                    )
-                ));
-            },
-            Err(e) => return Err(e)
-        }
+        let (rem_l, consumed) = take_line(source)?;
+        return Ok((
+            rem_l, // Remaining lines
+            (
+                vec![consumed], // Possible children
+                Token::Paragraph(Paragraph{})
+            )
+        ));
     }
 }
 
@@ -240,32 +208,24 @@ impl LineConsumingParse for List {
     fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
         //let line_number = preceded(digit1, tag(". "));
         let list_line = preceded(tag("- "), take_line);
-        let take_list_lines = many1(list_line)(source);
-        match take_list_lines {
-            Ok((rem_l, consumed)) => {
-                return Ok((
-                    rem_l,
-                    (
-                        consumed,
-                        Token::List(List{})
-                    )
-                ))
-            },
-            Err(e) => return Err(e)
-        }
+        let (rem_l, consumed) = many1(list_line)(source)?;
+        return Ok((
+            rem_l,
+            (
+                consumed,
+                Token::List(List{})
+            )
+        ))
     }
 }
 
 impl Parse for Italic {
     fn parse(source: &str) -> IResult<&str,(&str,Token)> {
-        let res: IResult<&str, &str> = delimited( char('*'), is_not("*"), char('*'))(source);
-        match res {
-            Ok((rem, consumed)) => Ok((
-                rem,
-                (consumed,Token::Italic(Italic{}))
-            )),
-            Err(e) => Err(e)
-        }
+        let (rem,consumed) = delimited( char('*'), is_not("*"), char('*'))(source)?;
+        Ok((
+            rem,
+            (consumed,Token::Italic(Italic{}))
+        ))
     }
 }
 
@@ -278,46 +238,34 @@ impl Parse for Link {
             preceded(tag("("), take_till(|c| c == ')')),
             tag(")"));
 
-        let res:IResult<&str, (&str,&str)> = tuple((caption,url))(source);
-        match res {
-            Ok((rem, (caption,url))) => {
-                return Ok((
-                    rem,
-                    (caption,Token::Link(Link{url: url.to_string()}))
-                    ))
-                }
-            ,
-            Err(e) => Err(e)
-        }
+        let (rem,(caption,url)) = tuple((caption,url))(source)?;
+        return Ok((
+            rem,
+            (caption,Token::Link(Link{url: url.to_string()}))
+        ))
     }
 }
 
 impl Parse for InlineCode {
     fn parse(source: &str) -> IResult<&str,(&str,Token)> {
-        let res: IResult<&str, &str> = terminated(
+        let (rem,consumed) = terminated(
             preceded(tag("`"), take_till(|c| c == '`')),
-            tag("`"))(source);
-        match res {
-            Ok((rem, consumed)) => Ok((
-                rem,
-                (consumed,Token::InlineCode(InlineCode{}))
-            )),
-            Err(e) => Err(e)
-        }
+            tag("`"))(source)?;
+        Ok((
+            rem,
+            (consumed,Token::InlineCode(InlineCode{}))
+        ))
     }
 }
 
 impl Parse for Bold {
     fn parse(source: &str) -> IResult<&str,(&str,Token)> {
-        let res: IResult<&str, &str> = terminated(
-            preceded(tag("**"), take_till(|c| c == INLINE_SYMBOL)),
-            tag("**"))(source);
-        match res {
-            Ok((rem, consumed)) => Ok((rem,
-                (consumed,Token::Bold(Bold{}))
-            )),
-            Err(e) => Err(e)
-        }
+        let (rem,consumed) = terminated(
+            preceded(tag("**"), take_till(|c| c == '*')),
+            tag("**"))(source)?;
+        Ok((rem,
+            (consumed,Token::Bold(Bold{}))
+        ))
     }
 }
 
@@ -352,30 +300,79 @@ impl HigherLevel for Token {
 mod tests {
     use super::*;
 
-    // #[test]
-    // fn t_take_line() {
-    //     assert_eq!(("Line 2\nLine 3", "Line 1"), take_line("Line 1\nLine 2\nLine 3").unwrap());
-    //     assert_eq!(true, take_line("Last Line").is_ok());
-    //     assert_eq!(true, take_line("\nLast Line").is_ok());
-    //     assert_eq!(true, take_line("\n\n\nLast Line").is_ok());
-    //     assert_eq!(true, take_line("").is_err());
-    // }
+    fn match_syntax(md_syntax: MdSyntaxTree, expected: Vec<Token>) {
+
+        let mut tokens_in_order = vec![];
+        for row in md_syntax {
+            for tk in row.iter_dfs() {
+                tokens_in_order.push(tk.clone());
+            }
+        }
+        assert_eq!(tokens_in_order, expected);
+    }
 
     #[test]
-    fn t_parse_md_str() {
-        assert_eq!(true,parse_md_str(
+    fn t_headers() {
+        let md_syntax = parse_md_str(
+"# First header
+## Second header
+### Third header"
+        );
+        let expected_order: Vec<Token> = Vec::from([
+            Token::Header(Header{level: 1}),
+            Token::PlainText(PlainText{text: String::from("First header")}),
+            Token::Header(Header{level: 2}),
+            Token::PlainText(PlainText{text: String::from("Second header")}),
+            Token::Header(Header{level: 3}),
+            Token::PlainText(PlainText{text: String::from("Third header")}),
+        ]);
+        match_syntax(md_syntax, expected_order);
+    }
 
-"### First header\n
-**Bold text** Plain text in between *Italics after*\n\
-Here's some plain text *and italics* and plain text *and italics again*\n
-[This is a link](www.gnu.org)\n
-- List item
-- Another item\n
-[**This is a bold link**](www.gnu.org)\n
-\nFailed italics text*\n**Unterminated bold\n# Last header\n"
+    #[test]
+    fn t_links() {
+        let md_syntax = parse_md_str(
+"[Link](http://gnu.org)
+*[Italic link](http://gnu.org)*
+**[Bold link](http://gnu.org)**"
+        );
+        let expected_order: Vec<Token> = Vec::from([
+            Token::Paragraph(Paragraph{}),
+            Token::Link(Link{url: String::from("http://gnu.org")}),
+            Token::PlainText(PlainText{text: String::from("Link")}),
 
-        ).len() > 0);
-        //assert_eq!(true,parse_md_str("## Hi").len() > 0);
+            Token::Paragraph(Paragraph{}),
+
+            Token::Italic(Italic{}),
+            Token::Link(Link{url: String::from("http://gnu.org")}),
+            Token::PlainText(PlainText{text: String::from("Italic link")}),
+
+            Token::Paragraph(Paragraph{}),
+
+            Token::Bold(Bold{}),
+            Token::Link(Link{url: String::from("http://gnu.org")}),
+            Token::PlainText(PlainText{text: String::from("Bold link")}),
+        ]);
+        match_syntax(md_syntax, expected_order);
+    }
+
+    #[test]
+    fn t_lists() {
+        let md_syntax = parse_md_str(
+"- First item
+- Second item
+- Third item"
+        );
+        let expected_order: Vec<Token> = Vec::from([
+            Token::List(List{}),
+            Token::ListItem(ListItem{}),
+            Token::PlainText(PlainText{text: String::from("First item")}),
+            Token::ListItem(ListItem{}),
+            Token::PlainText(PlainText{text: String::from("Second item")}),
+            Token::ListItem(ListItem{}),
+            Token::PlainText(PlainText{text: String::from("Third item")}),
+        ]);
+        match_syntax(md_syntax, expected_order);
     }
 
     #[test]
