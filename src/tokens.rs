@@ -19,6 +19,7 @@ pub enum Token {
     Header(Header),
     Paragraph(Paragraph),
     List(List),
+    Code(Code),
     PlainText(PlainText),
     Italic(Italic),
     InlineCode(InlineCode),
@@ -43,10 +44,13 @@ pub trait TextComponent {
 // TOKENS
 // ----------------------------------------------------------------------------
 
+// Higher level / Line consuming
+
 #[derive(PartialEq)]
 #[derive(Debug)]
 #[derive(Clone)]
 pub struct List {
+    pub level: usize
 }
 
 #[derive(PartialEq)]
@@ -67,6 +71,14 @@ pub struct Header {
 #[derive(Clone)]
 pub struct Paragraph {
 }
+
+#[derive(PartialEq)]
+#[derive(Debug)]
+#[derive(Clone)]
+pub struct Code {
+}
+
+// Lower level / Inline
 
 #[derive(PartialEq)]
 #[derive(Debug)]
@@ -117,6 +129,12 @@ impl Leveled for Header {
     }
 }
 
+impl Leveled for List {
+    fn level(&self) -> u32 {
+        self.level as u32
+    }
+}
+
 impl TextComponent for PlainText {
     fn text(&self) -> String {
         self.text.clone()
@@ -141,7 +159,8 @@ impl fmt::Debug for Token {
             Token::Bold(t) => return t.fmt(f),
             Token::Paragraph(t) => return t.fmt(f),
             Token::InlineCode(t) => return t.fmt(f),
-            Token::ListItem(t) => return t.fmt(f)
+            Token::ListItem(t) => return t.fmt(f),
+            Token::Code(t) => return t.fmt(f)
         }
     }
 }

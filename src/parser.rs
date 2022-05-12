@@ -4,13 +4,15 @@ use nom::{
     Err,
     sequence::{delimited,preceded,tuple, terminated},
     character::complete::char,
-    character::complete::{newline, digit1},
+    character::{complete::{newline, digit1}, is_space},
     character::{is_newline, complete::anychar},
     bytes::complete::is_not,
     bytes::complete::tag,
     bytes::complete::take_till,
+    bytes::complete::take_until,
+    bytes::complete::{take_while, take_while_m_n},
     multi::{many1_count, many1, many_till, many0, fold_many0 },
-    error::ErrorKind
+    error::ErrorKind, Parser, Slice
 };
 use std::{collections::VecDeque, vec};
 
@@ -43,24 +45,29 @@ pub fn parse_line(line_str: IResult<&str,(&str,Token)>) -> MdLine {
 
 pub fn consume_lines(input: &str) -> IResult<&str,MdLine> {
 
-    let (rem,(child_lines, token)) = parse_line_consuming_token(input)?;
+    let (rem,(c_str, token)) = parse_line_consuming_token(input)?;
 
     // Fill children in syntax tree by folding over each line consumed by the parent Token.
-    let tree = child_lines.iter().fold(Tree::new(token.clone()), |mut acc,c_str| {
-        let mut stack: VecDeque<(usize, &str, Token)> =
-        parse_children(token.child_parsers(), c_str).iter().map(|c| (0,c.0,c.1.clone())).collect();
+    let mut tree = Tree::new(token.clone());
+    let mut stack: VecDeque<(usize, &str, Token)> =
+    parse_children( token.child_parsers(), c_str, 1)
+        .iter()
+        .map(|c| (0,c.0,c.1.clone()))
+        .collect();
 
 
-        while let Some((p_idx,unconsumed, child)) = stack.pop_front() {
-            let parsers = child.child_parsers();
-            let added = acc.add_node_by_index(TreeIndex::Arena(p_idx), child);
-            let idx = added.unwrap().raw_idx;
-            let stack_extended: VecDeque<(usize, &str, Token)> =
-            parse_children(parsers, unconsumed).iter().map(|c| (idx,c.0,c.1.clone())).collect();
-            stack.extend(stack_extended);
-        }
-        acc
-    });
+    while let Some((p_idx,unconsumed, child)) = stack.pop_front() {
+        let parsers = child.child_parsers();
+        let added = tree.add_node_by_index(TreeIndex::Arena(p_idx), child);
+        let idx = added.as_ref().unwrap().raw_idx;
+        let depth = added.unwrap().depth;
+        let stack_extended: VecDeque<(usize, &str, Token)> =
+        parse_children(parsers, unconsumed, depth + 1)
+            .iter()
+            .map(|c| (idx,c.0,c.1.clone()))
+            .collect();
+        stack.extend(stack_extended);
+    }
     print!("{}",tree);
     return Ok((rem,tree));
 
@@ -68,13 +75,15 @@ pub fn consume_lines(input: &str) -> IResult<&str,MdLine> {
 
 
 fn try_all_parsers(
-    allowed_parsers: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, source: &str)
+    allowed_parsers: Vec<fn(&str,usize) -> IResult<&str, (&str,Token)>>,
+    source: &str,
+    depth: usize)
 -> IResult<&str,(&str,Token)>{
     if source.is_empty() {
         return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}));
     }
     for parse in allowed_parsers {
-        let res = parse(source);
+        let res = parse(source,depth);
         if res.is_ok() { return res }
     }
     return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}));
@@ -85,17 +94,19 @@ fn try_all_parsers(
  Token is found or consume all input and return just PlainText.
 */
 fn take_tokens_with_leading_plaintext(
-    token_parsers: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, src: &str)
+    token_parsers: Vec<fn(&str,usize) -> IResult<&str, (&str,Token)>>,
+    src: &str,
+    depth:usize)
 -> IResult<&str,Vec<(&str,Token)>>{
 
     if src.is_empty(){
             return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}))
     }
 
-    let (rem,consumed) = many0( |s| try_all_parsers(token_parsers.clone(), s))(src)?;
+    let (rem,consumed) = many0( |s| try_all_parsers(token_parsers.clone(), s, depth))(src)?;
     // If no token found at head of input, consume into PlainText until found token or EOF.
     if consumed.is_empty() {
-        let leading_plain_text_chars = many_till(anychar,|s| try_all_parsers(token_parsers.clone(), s))(src);
+        let leading_plain_text_chars = many_till(anychar,|s| try_all_parsers(token_parsers.clone(), s, depth))(src);
 
         return match leading_plain_text_chars {
             Ok((remt, (chars,tk))) => {
@@ -121,11 +132,13 @@ fn take_tokens_with_leading_plaintext(
 }
 
 fn parse_children(
-    allowed_children: Vec<fn(&str) -> IResult<&str, (&str,Token)>>, src: &str)
+    allowed_children: Vec<fn(&str, usize) -> IResult<&str, (&str,Token)>>,
+    src: &str,
+    depth: usize)
 -> Vec<(&str,Token)> {
 
     let lines = fold_many0(
-        |s| take_tokens_with_leading_plaintext(allowed_children.clone(), s),
+        |s| take_tokens_with_leading_plaintext(allowed_children.clone(), s, depth),
         Vec::new,
         |mut res: Vec<_>, mut tokens| {res.append(&mut tokens); res}
     )(src);
@@ -140,8 +153,9 @@ fn parse_children(
 
 }
 
-fn parse_line_consuming_token(source: &str) -> IResult<&str, (Vec<&str>,Token)> {
+fn parse_line_consuming_token(source: &str) -> IResult<&str, (&str,Token)> {
     let line_consuming_tokens = [
+        Code::parse_lines,
         List::parse_lines,
         Header::parse_lines,
         Paragraph::parse_lines,
@@ -159,10 +173,10 @@ fn parse_line_consuming_token(source: &str) -> IResult<&str, (Vec<&str>,Token)> 
 pub trait LineConsumingParse {
 
     /**
-     Parse consuming at least an entire line.
+     Parse consuming at least one entire line.
      Returns tuple with string containing consumed lines.
     */
-    fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)>;
+    fn parse_lines(source: &str) -> IResult<&str,(&str,Token)>;
 }
 
 
@@ -171,18 +185,18 @@ pub trait LineConsumingParse {
 * itself.
 */
 pub trait Parse {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)>;
+    fn parse(source: &str, depth: usize) -> IResult<&str,(&str,Token)>;
 }
 
 impl LineConsumingParse for Header {
-    fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
+    fn parse_lines(source: &str) -> IResult<&str,(&str,Token)> {
 
         let (rem_l,consumed) = take_line(source)?;
         let (rem,count) = terminated(many1_count(tag("#")), tag(" "))(consumed)?;
         return Ok((
             rem_l, // Remaining lines
             (
-                vec![rem], // Possible children
+                rem, // Possible children
                 Token::Header(Header{
                     level: count as u32
                 })
@@ -192,35 +206,100 @@ impl LineConsumingParse for Header {
 }
 
 impl LineConsumingParse for Paragraph {
-    fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
+    fn parse_lines(source: &str) -> IResult<&str,(&str,Token)> {
         let (rem_l, consumed) = take_line(source)?;
         return Ok((
             rem_l, // Remaining lines
             (
-                vec![consumed], // Possible children
+                consumed, // Possible children
                 Token::Paragraph(Paragraph{})
             )
         ));
     }
 }
 
-impl LineConsumingParse for List {
-    fn parse_lines(source: &str) -> IResult<&str,(Vec<&str>,Token)> {
-        //let line_number = preceded(digit1, tag(". "));
-        let list_line = preceded(tag("- "), take_line);
-        let (rem_l, consumed) = many1(list_line)(source)?;
+impl LineConsumingParse for Code {
+    fn parse_lines(source: &str) -> IResult<&str,(&str,Token)> {
+
+        let (rem_l,consumed) = preceded( tag("```"), take_until("```"))(source)?;
+
         return Ok((
-            rem_l,
+            &rem_l[3..], // Remaining lines
             (
-                consumed,
-                Token::List(List{})
+                consumed, // Possible children
+                Token::Code(Code{})
             )
-        ))
+        ));
+    }
+}
+
+impl List {
+
+    // Require a depth-amount of leading whitespace to parse a new list.
+    fn parse_by_depth(source: &str, depth: usize) -> IResult<&str,(&str,Token)> {
+
+        // List can only be terminated bV
+        //   1. Two newlines in a row
+        //   2. A newline and a sequence other than "- "
+        //   3. "- " preceded by less than depth -amount of whitespace
+
+        // Check if the first line exists
+        let res: IResult<&str, &str> = preceded(
+            terminated(take_while_m_n(0,depth,|x| is_space(x as u8)), tag("- ")),
+            take_until("\n\n"))(source);
+
+        // NOTE: Manual parser!
+        if let Ok((_, _)) = res {
+
+            // Take input until terminated by
+            //   1. Two newlines in a row
+            //   2. A newline and a sequence other than "- "
+            let mut previous_newline = false;
+            let mut leading_whitespace = 0;
+            let mut i = 0;
+            for c in source.chars() {
+                if previous_newline && ( is_newline(c as u8) || c != '-' ) {
+                    if is_space(c as u8) {  // allow leading spaces before lines
+                        i+=1;
+                        leading_whitespace +=1;
+                        continue;
+                    }
+
+                    if leading_whitespace < depth {
+                        continue;
+                    }
+                    let consumed_s: &str = &source[0..i];
+                    let rem_s: &str = &source[i..];
+                    return Ok((
+                        rem_s,
+                        (
+                            consumed_s,
+                            Token::List(List{level: depth})
+                        )
+                    ))
+                }
+                i+=1;
+                previous_newline = is_newline(c as u8);
+            }
+        }
+        return Err(Err::Error(Error{input: "", code: ErrorKind::Satisfy}));
+    }
+}
+
+impl LineConsumingParse for List {
+    fn parse_lines(source: &str) -> IResult<&str,(&str,Token)> {
+        List::parse_by_depth(source,0)
+    }
+}
+
+impl Parse for List {
+    fn parse(source: &str,depth:usize) -> IResult<&str,(&str,Token)> {
+        List::parse_by_depth(source,depth)
     }
 }
 
 impl Parse for Italic {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
+    fn parse(source: &str,_:usize) -> IResult<&str,(&str,Token)> {
         let (rem,consumed) = delimited( char('*'), is_not("*"), char('*'))(source)?;
         Ok((
             rem,
@@ -230,7 +309,7 @@ impl Parse for Italic {
 }
 
 impl Parse for Link {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
+    fn parse(source: &str,_:usize) -> IResult<&str,(&str,Token)> {
         let caption = terminated(
             preceded(tag("["), take_till(|c| c == ']')),
             tag("]"));
@@ -247,7 +326,7 @@ impl Parse for Link {
 }
 
 impl Parse for InlineCode {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
+    fn parse(source: &str,_:usize) -> IResult<&str,(&str,Token)> {
         let (rem,consumed) = terminated(
             preceded(tag("`"), take_till(|c| c == '`')),
             tag("`"))(source)?;
@@ -259,7 +338,7 @@ impl Parse for InlineCode {
 }
 
 impl Parse for Bold {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
+    fn parse(source: &str, _:usize) -> IResult<&str,(&str,Token)> {
         let (rem,consumed) = terminated(
             preceded(tag("**"), take_till(|c| c == '*')),
             tag("**"))(source)?;
@@ -271,21 +350,26 @@ impl Parse for Bold {
 
 // Consumes everything as any input passed to this will be a complete line
 impl Parse for ListItem {
-    fn parse(source: &str) -> IResult<&str,(&str,Token)> {
-        return Ok(("",(source, Token::ListItem(ListItem{}))));
+    fn parse(source: &str,_:usize) -> IResult<&str,(&str,Token)> {
+        let preciding_whitespace = terminated(take_while(|x| is_space(x as u8)), tag("- "));
+        let mut list_line = preceded(
+            preciding_whitespace, take_line);
+        let (rem, consumed) = list_line(source)?;
+        return Ok((rem,(consumed, Token::ListItem(ListItem{}))));
     }
 }
 
 pub trait HigherLevel {
-    fn child_parsers(&self) -> Vec<fn(&str) -> IResult<&str, (&str,Token)>>;
+    fn child_parsers(&self) -> Vec<fn(&str,usize) -> IResult<&str, (&str,Token)>>;
 }
 
 impl HigherLevel for Token {
-    fn child_parsers(&self) -> Vec<fn(&str) -> IResult<&str, (&str,Token)>> {
+    fn child_parsers(&self) -> Vec<fn(&str,usize) -> IResult<&str, (&str,Token)>> {
         match self {
             Token::Header(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
             Token::Paragraph(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
-            Token::List(_) => vec![ListItem::parse],
+            Token::List(_) => vec![List::parse,ListItem::parse],
+            Token::Code(_) => vec![],
             Token::ListItem(_) => vec![Italic::parse, Bold::parse, Link::parse, InlineCode::parse],
             Token::Link(_) => vec![Italic::parse, Bold::parse],
             Token::Bold(_) => vec![Italic::parse, Link::parse],
@@ -361,26 +445,21 @@ mod tests {
         let md_syntax = parse_md_str(
 "- First item
 - Second item
-- Third item"
+- Third item
+
+"
         );
         let expected_order: Vec<Token> = Vec::from([
-            Token::List(List{}),
+            Token::List(List{level: 0}),
             Token::ListItem(ListItem{}),
             Token::PlainText(PlainText{text: String::from("First item")}),
             Token::ListItem(ListItem{}),
             Token::PlainText(PlainText{text: String::from("Second item")}),
             Token::ListItem(ListItem{}),
             Token::PlainText(PlainText{text: String::from("Third item")}),
+            Token::Paragraph(Paragraph{}),
         ]);
         match_syntax(md_syntax, expected_order);
-    }
-
-    #[test]
-    fn t_parse_italic() {
-        assert_eq!(true,Italic::parse("*Text in italics*").is_ok());
-        assert_eq!(true,Italic::parse("* Not complete").is_err());
-        assert_eq!(true,Italic::parse("*Not complete").is_err());
-        assert_eq!(true,Italic::parse("**").is_err());
     }
 
 }
