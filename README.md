@@ -4,6 +4,9 @@ Parser / compiler for markdown syntax with a focus on memory safety and correctn
 
 Converts markdown into a syntax tree of tokens with the help of [nom](https://github.com/Geal/nom), a library for writing parsers.
 
+To build the web-app front-end/demo page, run `yarn install && yarn build`. Then run `yarn dev` to serve the page.
+The web frontend requires the `wasm-pack` binary to be installed.
+
 ## Memory safety
 
 Achieving memory safety is a core feature of Rust. Rust allows (forces) the programmer to explicitly handle potentially unsafe situations. Eg. an indexation into an array will produce either a value or instance of `Error`. The programmer is encouraged to handle the `Error`-case by having to check for an `Error` value before accessing the result of the operation. The only other alternative is to call `unwrap` on a potentially unsafe operation. If this operation produces an `Error`, since it's not being  handled the program will immediately panic terminating itself.
@@ -24,7 +27,7 @@ Instead, *nom* provides a declarative syntax that makes writing safe and correct
 
 Tests were written using Rust's built in assertion macros and testing framework.
 
-Tests can be ran by running: `yarn test`.
+Tests can be ran by running: `cargo test parser_t` (or `yarn test`).
 
 ## The state of the implementation and self evaluation
 
