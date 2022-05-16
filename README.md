@@ -4,6 +4,8 @@ Parser / compiler for markdown syntax with a focus on memory safety and correctn
 
 Converts markdown into a syntax tree of tokens with the help of [nom](https://github.com/Geal/nom), a library for writing parsers.
 
+For running the test suite the only dependency is the rust compiler and `nom`.
+
 To build the web-app front-end/demo page, run `yarn install && yarn build`. Then run `yarn dev` to serve the page.
 The web frontend requires the `wasm-pack` binary to be installed.
 
