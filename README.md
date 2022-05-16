@@ -34,6 +34,14 @@ Tests can be ran by running: `cargo test parser_t` (or `yarn test`).
 The current implementation is far enough to illustrate that it's now possible to support the entirety of the markdown syntax by simply defining more `Tokens` and implementing the `Parse`- and `Compile`- traits for them.
 So *optimistically* the only thing left to do for a complete markdown parser is manual work, since the logic has been figured out.
 
-The focus of the project from the POV of secure programming moved from higher level to a lower as the implementation went on.
+The list of currently supported markdown syntax as defined by https://www.markdownguide.org/basic-syntax/ is the following:
 
+- Paragraphs
+- Headers
+- Unordered lists
+- Code
+- Italic
+- Bold
+
+The focus of the project from the POV of secure programming moved from higher level to a lower as the implementation went on.
 The main achieved goal of secure programming here is secure practices in accessing memory: there are no unsafe allocations or any potentials for overflow. This proved difficult at times by virtue of the language's compiler being very conservative in what it considers to be safe code. Especially creating and using a syntax tree proved challenging, as tree-structures are a domain where it's easy to have things like dangling pointers and other sources of vulnerabilities.
